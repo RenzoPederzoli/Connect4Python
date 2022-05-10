@@ -20,9 +20,11 @@ class Comms(object):
         if r.status_code == 200:
             self._auth['USERNAME'] = uname
             self._auth['PASSWORD'] = upass
-            return r.json()['GTG']
+            return r
+        elif r.json()['ERR'] == 'BAD SIGNUP | USER ALREADY EXISTS': # Quick fix to handle this
+            return self.login(uname, upass)
         else:
-            return r.json()['ERR']
+            return r
 
     def login(self, uname, upass):
         payload = {'USERNAME':uname, 'PASSWORD':upass}
@@ -30,9 +32,10 @@ class Comms(object):
         if r.status_code == 200:
             self._auth['USERNAME'] = uname
             self._auth['PASSWORD'] = upass
-            return r.json()['GTG']
+            return r
+
         else:
-            return r.json()['ERR']
+            return r
 
     def startgame(self):
         r = requests.post(self._url+"startgame", json=self._auth)
@@ -40,18 +43,20 @@ class Comms(object):
             res = r.json()
             self._gameid = res['GAMEID']
             self._game_obj = res['GAME']
-            return r.json()['GTG']
-        else:
-            return r.json()['ERR']
+            return r
 
+        else:
+            return r
+
+    #call many times to see if my turn yet or game found
     def getgame(self):
         r = requests.get(self._url+"getgame/"+self._gameid, json=self._auth)
         if r.status_code == 200:
             res = r.json()
             self._game_obj = res['GAME']
-            return r.json()['GTG']
+            return r
         else:
-            return r.json()['ERR']
+            return r
 
     # No logic in server to prevent move in queiing lobby
     def movegame(self, move):
@@ -59,6 +64,6 @@ class Comms(object):
         if r.status_code == 200:
             res = r.json()
             self._game_obj = res['GAME']
-            return r.json()['GTG']
+            return r
         else:
-            return r.json()['ERR']
+            return r

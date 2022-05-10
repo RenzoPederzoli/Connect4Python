@@ -1,207 +1,267 @@
+import time
 import numpy as np
 import pygame
+import pygame_menu
 import sys
 import math
- 
-BLUE = (0,0,255)
-BLACK = (0,0,0)
-RED = (255,0,0)
-YELLOW = (255,255,0)
-mainClock = pygame.time.Clock()
+import threading
 
-from pygame.locals import *
-pygame.init()
- 
+from comms import Comms
+
+BLUE = (0, 0, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+YELLOW = (255, 255, 0)
+
 ROW_COUNT = 6
 COLUMN_COUNT = 7
- 
-def create_board():
-    board = np.zeros((ROW_COUNT,COLUMN_COUNT))
-    return board
- 
-def drop_piece(board, row, col, piece):
-    board[row][col] = piece
- 
-def is_valid_location(board, col):
-    return board[ROW_COUNT-1][col] == 0
- 
-def get_next_open_row(board, col):
-    for r in range(ROW_COUNT):
-        if board[r][col] == 0:
-            return r
- 
-def print_board(board):
-    print(np.flip(board, 0))
- 
-def winning_move(board, piece):
-    # Check horizontal locations for win
-    for c in range(COLUMN_COUNT-3):
-        for r in range(ROW_COUNT):
-            if board[r][c] == piece and board[r][c+1] == piece and board[r][c+2] == piece and board[r][c+3] == piece:
-                return True
- 
-    # Check vertical locations for win
-    for c in range(COLUMN_COUNT):
-        for r in range(ROW_COUNT-3):
-            if board[r][c] == piece and board[r+1][c] == piece and board[r+2][c] == piece and board[r+3][c] == piece:
-                return True
- 
-    # Check positively sloped diaganols
-    for c in range(COLUMN_COUNT-3):
-        for r in range(ROW_COUNT-3):
-            if board[r][c] == piece and board[r+1][c+1] == piece and board[r+2][c+2] == piece and board[r+3][c+3] == piece:
-                return True
- 
-    # Check negatively sloped diaganols
-    for c in range(COLUMN_COUNT-3):
-        for r in range(3, ROW_COUNT):
-            if board[r][c] == piece and board[r-1][c+1] == piece and board[r-2][c+2] == piece and board[r-3][c+3] == piece:
-                return True
- 
-def draw_board(board):
-    for c in range(COLUMN_COUNT):
-        for r in range(ROW_COUNT):
-            pygame.draw.rect(screen, BLUE, (c*SQUARESIZE, r*SQUARESIZE+SQUARESIZE, SQUARESIZE, SQUARESIZE))
-            pygame.draw.circle(screen, BLACK, (int(c*SQUARESIZE+SQUARESIZE/2), int(r*SQUARESIZE+SQUARESIZE+SQUARESIZE/2)), RADIUS)
-     
-    for c in range(COLUMN_COUNT):
-        for r in range(ROW_COUNT):      
-            if board[r][c] == 1:
-                pygame.draw.circle(screen, RED, (int(c*SQUARESIZE+SQUARESIZE/2), height-int(r*SQUARESIZE+SQUARESIZE/2)), RADIUS)
-            elif board[r][c] == 2: 
-                pygame.draw.circle(screen, YELLOW, (int(c*SQUARESIZE+SQUARESIZE/2), height-int(r*SQUARESIZE+SQUARESIZE/2)), RADIUS)
-    pygame.display.update()
- 
- 
-board = create_board()
-print_board(board)
-game_over = False
-turn = 0
- 
-#initalize pygame
-pygame.init()
- 
-#define our screen size
+
 SQUARESIZE = 100
- 
-#define width and height of board
+
 width = COLUMN_COUNT * SQUARESIZE
 height = (ROW_COUNT+1) * SQUARESIZE
- 
-size = (width, height)
- 
+
 RADIUS = int(SQUARESIZE/2 - 5)
- 
-screen = pygame.display.set_mode(size)
 
-#Calling function draw_board again
-draw_board(board)
-pygame.display.update()
- 
-myfont = pygame.font.SysFont("monospace", 75)
- 
+#For communication
+comm = Comms()
 
-pygame.display.set_caption('game base')
-screen = pygame.display.set_mode((500, 500),0,32)
- 
-font = pygame.font.SysFont(None, 20)
- 
-def draw_text(text, font, color, surface, x, y):
-    textobj = font.render(text, 1, color)
-    textrect = textobj.get_rect()
-    textrect.topleft = (x, y)
-    surface.blit(textobj, textrect)
- 
-click = False
- 
-def main_menu():
-    while True:
-        screen = pygame.display.set_mode(size)
-        screen.fill((0,0,0))
-        draw_text('Click Red Square to Join Game', font, (255, 255, 255), screen, 50, 70)
- 
-        mx, my = pygame.mouse.get_pos()
- 
-        button_1 = pygame.Rect(50, 100, 200, 50)
-        if button_1.collidepoint((mx, my)):
-            if click:
-                gameplay()
-        pygame.draw.rect(screen, (255, 0, 0), button_1)
- 
-        click = False
+class SceneBase:
+    def __init__(self):
+        self.next = self
+
+    def ProcessInput(self, events, pressed_keys):
+        print("uh-oh, you didn't override this in the child class")
+
+    def Update(self):
+        print("uh-oh, you didn't override this in the child class")
+
+    def Render(self, screen):
+        print("uh-oh, you didn't override this in the child class")
+
+    def SwitchToScene(self, next_scene):
+        self.next = next_scene
+
+    def Terminate(self):
+        self.SwitchToScene(None)
+
+# This is to use pygame-menu library correctly
+menus = {}
+def run_game(width, height, fps, starting_scene):
+    pygame.init()
+    screen = pygame.display.set_mode((width, height))
+    clock = pygame.time.Clock()
+
+    menus["Login"] = pygame_menu.Menu('Login/Signup', width, height, theme=pygame_menu.themes.THEME_BLUE)
+    menus["Main"] = pygame_menu.Menu('Main Menu', width, height, theme=pygame_menu.themes.THEME_BLUE)
+    menus["Wait"] = pygame_menu.Menu('Waiting', width, height, theme=pygame_menu.themes.THEME_BLUE)
+
+    active_scene = starting_scene()
+
+    while active_scene != None:
+        pressed_keys = pygame.key.get_pressed()
+
+        # Event filtering
+        filtered_events = []
         for event in pygame.event.get():
-            if event.type == QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == KEYDOWN:
-                if event.key == K_ESCAPE:
-                    pygame.quit()
-                    sys.exit()
-            if event.type == MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    click = True
- 
-        pygame.display.update()
-        mainClock.tick(60)
+            quit_attempt = False
+            if event.type == pygame.QUIT:
+                quit_attempt = True
+            elif event.type == pygame.KEYDOWN:
+                alt_pressed = pressed_keys[pygame.K_LALT] or \
+                    pressed_keys[pygame.K_RALT]
+                if event.key == pygame.K_ESCAPE:
+                    quit_attempt = True
+                elif event.key == pygame.K_F4 and alt_pressed:
+                    quit_attempt = True
+
+            if quit_attempt:
+                active_scene.Terminate()
+            else:
+                filtered_events.append(event)
+
+        active_scene.ProcessInput(filtered_events, pressed_keys)
+        active_scene.Update()
+        active_scene.Render(screen)
+
+        active_scene = active_scene.next
+
+        pygame.display.flip()
+        clock.tick(fps)
 
 
-def gameplay():
-    game_over = False
-    turn = 0
-    while not game_over:
-    
-        for event in pygame.event.get():
+class LoginScene(SceneBase):
+    def __init__(self):
+        SceneBase.__init__(self)
+        self.uname = ""
+        self.upass = ""
+        menus["Login"].add.text_input('UserName : ', default='JohnDoe', onchange=self.uname_control)
+        menus["Login"].add.text_input('Password : ', default='*******', onchange=self.upass_control)
+        menus["Login"].add.button('Submit', self.start_the_game)
+        menus["Login"].add.button('Quit', pygame_menu.events.EXIT)
+
+    def ProcessInput(self, events, pressed_keys):
+        menus["Login"].update(events)
+        for event in events: 
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                # Move to the next scene when the user pressed Enter for quick tests
+                self.SwitchToScene(GameScene())
+
+    def Update(self):
+        pass
+
+    def Render(self, screen):
+        menus["Login"].draw(screen)
+
+    def start_the_game(self):
+        response = comm.signup(self.uname, self.upass)
+        if (response.status_code == 200):
+            self.SwitchToScene(MainScene())
+        else:
+            print(response.json())
+
+    def uname_control(self, text):
+        self.uname = text
+
+    def upass_control(self, text):
+        self.upass = text
+
+class MainScene(SceneBase):
+    def __init__(self):
+        SceneBase.__init__(self)
+        menus["Main"].add.label('Welcome '+comm._auth['USERNAME'], font_size=48)
+        menus["Main"].add.button('Play', self.start_the_game)
+        menus["Main"].add.button('Quit', pygame_menu.events.EXIT)
+
+    def ProcessInput(self, events, pressed_keys):
+        menus["Main"].update(events)
+
+    def Update(self):
+        pass
+
+    def Render(self, screen):
+        menus["Main"].draw(screen)
+
+    def start_the_game(self):
+        response = comm.startgame()
+        if (response.status_code == 200):
+            self.SwitchToScene(WaitingScene())
+        else:
+            print(response.json())
+
+class WaitingScene(SceneBase):
+    def __init__(self):
+        SceneBase.__init__(self)
+        menus["Wait"].add.label('Finding Match ... ', font_size=48)
+        t1 = threading.Thread(target=self.ping_server)
+        t1.start()
+
+    def ProcessInput(self, events, pressed_keys):
+        menus["Wait"].update(events)
+
+    def Update(self):
+        pass
+
+    def Render(self, screen):
+        menus["Wait"].draw(screen)
+
+    #Threaded function to check for game
+    def ping_server(self):
+        time_limit = 600 #10 min ping limit
+        check_interval = 1 #check every second
+        now = time.time()
+        last_time = now + time_limit
+        while (time.time() <= last_time):
+            if (self.check_for_game()):
+                break
+            else:
+                time.sleep(check_interval)
+
+    def check_for_game(self):
+        response = comm.getgame()
+        if (response.status_code == 200):
+            if (comm._game_obj['STATUS'] == "STARTED"):
+                self.SwitchToScene(GameScene())
+                return True
+            else:
+                return False
+        else:
+            print(response.json())
+            return False
+
+class GameScene(SceneBase):
+    def __init__(self):
+        SceneBase.__init__(self)
+        self.board = self.create_board()
+        self.custom_events = []
+
+    def ProcessInput(self, events, pressed_keys):
+        for event in events:
             if event.type == pygame.QUIT:
                 sys.exit()
 
-    
+            # Cant draw in ProcessInput, added to custom events processed in Render
             if event.type == pygame.MOUSEMOTION:
-                pygame.draw.rect(screen, BLACK, (0,0, width, SQUARESIZE))
-                posx = event.pos[0]
-                if turn == 0:
-                    pygame.draw.circle(screen, RED, (posx, int(SQUARESIZE/2)), RADIUS)
-                else: 
-                    pygame.draw.circle(screen, YELLOW, (posx, int(SQUARESIZE/2)), RADIUS)
-            pygame.display.update()
-    
+                self.custom_events.append(event)
+
             if event.type == pygame.MOUSEBUTTONDOWN:
-                pygame.draw.rect(screen, BLACK, (0,0, width, SQUARESIZE))
-                #print(event.pos)
-                # Ask for Player 1 Input
-                if turn == 0:
-                    posx = event.pos[0]
-                    col = int(math.floor(posx/SQUARESIZE))
-    
-                    if is_valid_location(board, col):
-                        row = get_next_open_row(board, col)
-                        drop_piece(board, row, col, 1)
-    
-                        if winning_move(board, 1):
-                            label = myfont.render("Player 1 wins!!", 1, RED)
-                            screen.blit(label, (40,10))
-                            game_over = True
-    
-    
-                # # Ask for Player 2 Input
-                else:               
-                    posx = event.pos[0]
-                    col = int(math.floor(posx/SQUARESIZE))
-    
-                    if is_valid_location(board, col):
-                        row = get_next_open_row(board, col)
-                        drop_piece(board, row, col, 2)
-    
-                        if winning_move(board, 2):
-                            label = myfont.render("Player 2 wins!!", 1, YELLOW)
-                            screen.blit(label, (40,10))
-                            game_over = True
-    
-                print_board(board)
-                draw_board(board)
-    
-                turn += 1
-                turn = turn % 2
-    
-                if game_over:
-                    pygame.time.wait(3000)
-main_menu()
+                self.custom_events.append(event)
+                posx = event.pos[0]
+                col = int(math.floor(posx/SQUARESIZE))
+
+                if self.is_valid_location(col):
+                    row = self.get_next_open_row(col)
+                    self.drop_piece(row, col, 1)
+
+    def Update(self):
+        pass
+
+    def Render(self, screen):
+        for c in range(COLUMN_COUNT):
+            for r in range(ROW_COUNT):
+                pygame.draw.rect(
+                    screen, BLUE, (c*SQUARESIZE, r*SQUARESIZE+SQUARESIZE, SQUARESIZE, SQUARESIZE))
+                pygame.draw.circle(screen, BLACK, (int(
+                    c*SQUARESIZE+SQUARESIZE/2), int(r*SQUARESIZE+SQUARESIZE+SQUARESIZE/2)), RADIUS)
+
+        for c in range(COLUMN_COUNT):
+            for r in range(ROW_COUNT):
+                if self.board[r][c] == 1:
+                    pygame.draw.circle(screen, RED, (int(
+                        c*SQUARESIZE+SQUARESIZE/2), height-int(r*SQUARESIZE+SQUARESIZE/2)), RADIUS)
+                elif self.board[r][c] == 2:
+                    pygame.draw.circle(screen, YELLOW, (int(
+                        c*SQUARESIZE+SQUARESIZE/2), height-int(r*SQUARESIZE+SQUARESIZE/2)), RADIUS)
+
+        for event in self.custom_events:
+            if event.type == pygame.MOUSEMOTION:
+                pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARESIZE))
+                posx = event.pos[0]
+                pygame.draw.circle(
+                    screen, RED, (posx, int(SQUARESIZE/2)), RADIUS)
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARESIZE))
+
+        # purge custom events
+        self.custom_events = []
+
+    def create_board(self):
+        board = np.zeros((ROW_COUNT, COLUMN_COUNT))
+        return board
+
+    def drop_piece(self, row, col, piece):
+        self.board[row][col] = piece
+
+    def is_valid_location(self, col):
+        return self.board[ROW_COUNT-1][col] == 0
+
+    def get_next_open_row(self, col):
+        for r in range(ROW_COUNT):
+            if self.board[r][col] == 0:
+                return r
+
+    def print_board(self):
+        print(np.flip(self.board, 0))
+
+if (__name__ == "__main__"):
+    run_game(width, height, 20, LoginScene)
