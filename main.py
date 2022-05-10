@@ -5,7 +5,6 @@ import pygame
 import pygame_menu
 import sys
 import math
-import threading
 
 from comms import Comms
 
@@ -55,9 +54,9 @@ def run_game(width, height, fps, starting_scene):
     screen = pygame.display.set_mode((width, height))
     clock = pygame.time.Clock()
 
-    menus["Login"] = pygame_menu.Menu('Login/Signup', width, height, theme=pygame_menu.themes.THEME_BLUE)
-    menus["Main"] = pygame_menu.Menu('Main Menu', width, height, theme=pygame_menu.themes.THEME_BLUE)
-    menus["Wait"] = pygame_menu.Menu('Waiting', width, height, theme=pygame_menu.themes.THEME_BLUE)
+    menus["Login"] = pygame_menu.Menu('Login/Signup', width, height, theme=pygame_menu.themes.THEME_DARK)
+    menus["Main"] = pygame_menu.Menu('Main Menu', width, height, theme=pygame_menu.themes.THEME_DARK)
+    menus["Wait"] = pygame_menu.Menu('Waiting', width, height, theme=pygame_menu.themes.THEME_DARK)
 
     active_scene = starting_scene()
 
@@ -161,7 +160,6 @@ class MainScene(SceneBase):
     def start_the_game(self):
         response = comm.startgame()
         if (response.status_code == 200):
-            print(comm._game_obj)
             if comm._game_obj['STATUS'] == "STARTED":
                 self.SwitchToScene(GameScene())
             else:
@@ -231,8 +229,10 @@ class GameScene(SceneBase):
 
     def Update(self):
         if (comm._game_obj["STATUS"] == "OVER"):
+            self.board = np.transpose(comm._game_obj["BOARD"])
+            pygame.time.wait(1500)
             self.SwitchToScene(MainScene())
-            return
+
         #Quick way to check every sec based on game clock
         if (self.count == 60):
             if (comm._game_obj['PLAYERS'][comm._game_obj['TURN']] != comm._auth["USERNAME"]):
