@@ -1,4 +1,5 @@
 import time
+from urllib import response
 import numpy as np
 import pygame
 import pygame_menu
@@ -11,6 +12,7 @@ from comms import Comms
 BLUE = (0, 0, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
+GREEN = (0, 255, 0)
 YELLOW = (255, 255, 0)
 
 ROW_COUNT = 6
@@ -194,6 +196,8 @@ class GameScene(SceneBase):
         SceneBase.__init__(self)
         self.board = self.create_board()
         self.custom_events = []
+        t1 = threading.Thread(target=self.ping_server)
+        t1.start()
 
     def ProcessInput(self, events, pressed_keys):
         for event in events:
@@ -209,9 +213,11 @@ class GameScene(SceneBase):
                 posx = event.pos[0]
                 col = int(math.floor(posx/SQUARESIZE))
 
-                if self.is_valid_location(col):
-                    row = self.get_next_open_row(col)
-                    self.drop_piece(row, col, 1)
+                if comm._game_obj['PLAYERS'][comm._game_obj['TURN']] == comm._auth["USERNAME"]:
+                    if self.is_valid_location(col):
+                        if self.make_move(col):
+                            row = self.get_next_open_row(col)
+                            self.drop_piece(row, col, 1)
 
     def Update(self):
         pass
@@ -242,6 +248,11 @@ class GameScene(SceneBase):
             if event.type == pygame.MOUSEBUTTONDOWN:
                 pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARESIZE))
 
+        if comm._game_obj['PLAYERS'][comm._game_obj['TURN']] == comm._auth["USERNAME"]:
+            pygame.draw.circle(screen, GREEN, (0+SQUARESIZE/16, 0-SQUARESIZE/16), int(RADIUS/8))
+        else:
+            pygame.draw.circle(screen, RED, (0+SQUARESIZE/16, 0-SQUARESIZE/16), int(RADIUS/8))
+
         # purge custom events
         self.custom_events = []
 
@@ -263,5 +274,34 @@ class GameScene(SceneBase):
     def print_board(self):
         print(np.flip(self.board, 0))
 
+    def ping_server(self):
+        time_limit = 600 #10 min ping limit
+        check_interval = 1 #check every second
+        now = time.time()
+        last_time = now + time_limit
+        while (time.time() <= last_time):
+            if (self.check_for_turn()):
+                break
+            else:
+                time.sleep(check_interval)
+
+    def check_for_turn(self):
+        response = comm.getgame()
+        if (response.status_code == 200):
+            if comm._game_obj['PLAYERS'][comm._game_obj['TURN']] == comm._auth["USERNAME"]:
+                return True
+            else:
+                return False
+        else:
+            print(response.json())
+            return False
+
+    def make_move(self, move):
+        response = comm.movegame(move)
+        if (response.status_code == 200):
+            return True
+        else:
+            return False
+
 if (__name__ == "__main__"):
-    run_game(width, height, 20, LoginScene)
+    run_game(width, height, 60, LoginScene)
