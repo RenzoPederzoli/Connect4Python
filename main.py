@@ -97,8 +97,8 @@ class LoginScene(SceneBase):
         SceneBase.__init__(self)
         self.uname = ""
         self.upass = ""
-        menus["Login"].add.text_input('UserName : ', default='JohnDoe', onchange=self.uname_control)
-        menus["Login"].add.text_input('Password : ', default='*******', onchange=self.upass_control)
+        menus["Login"].add.text_input('UserName : ', default='jon', onchange=self.uname_control)
+        menus["Login"].add.text_input('Password : ', default='123', onchange=self.upass_control)
         menus["Login"].add.button('Submit', self.start_the_game)
         menus["Login"].add.button('Quit', pygame_menu.events.EXIT)
 
@@ -147,7 +147,10 @@ class MainScene(SceneBase):
     def start_the_game(self):
         response = comm.startgame()
         if (response.status_code == 200):
-            self.SwitchToScene(WaitingScene())
+            if comm._game_obj['STATUS'] == "STARTED":
+                self.SwitchToScene(GameScene())
+            else:
+                self.SwitchToScene(WaitingScene())
         else:
             print(response.json())
 
@@ -194,10 +197,9 @@ class WaitingScene(SceneBase):
 class GameScene(SceneBase):
     def __init__(self):
         SceneBase.__init__(self)
-        self.board = self.create_board()
+        self.board = np.transpose(comm._game_obj["BOARD"]) # had to deal with weird board from server...
         self.custom_events = []
-        t1 = threading.Thread(target=self.ping_server)
-        t1.start()
+        self.count = 0
 
     def ProcessInput(self, events, pressed_keys):
         for event in events:
@@ -214,13 +216,15 @@ class GameScene(SceneBase):
                 col = int(math.floor(posx/SQUARESIZE))
 
                 if comm._game_obj['PLAYERS'][comm._game_obj['TURN']] == comm._auth["USERNAME"]:
-                    if self.is_valid_location(col):
-                        if self.make_move(col):
-                            row = self.get_next_open_row(col)
-                            self.drop_piece(row, col, 1)
+                    self.make_move(col)
 
     def Update(self):
-        pass
+        #Quick way to check every 60 seconds
+        if (self.count == 60):
+            if (comm._game_obj['PLAYERS'][comm._game_obj['TURN']] != comm._auth["USERNAME"]):
+                self.check_for_turn()
+            self.count = 0
+        self.count += 1
 
     def Render(self, screen):
         for c in range(COLUMN_COUNT):
@@ -234,60 +238,34 @@ class GameScene(SceneBase):
             for r in range(ROW_COUNT):
                 if self.board[r][c] == 1:
                     pygame.draw.circle(screen, RED, (int(
-                        c*SQUARESIZE+SQUARESIZE/2), height-int(r*SQUARESIZE+SQUARESIZE/2)), RADIUS)
-                elif self.board[r][c] == 2:
+                        c*SQUARESIZE+SQUARESIZE/2), height-int((ROW_COUNT - r - 1)*SQUARESIZE+SQUARESIZE/2)), RADIUS)
+                elif self.board[r][c] == 2: #(ROW_COUNT - r - 1) had to do this cause of transpose
                     pygame.draw.circle(screen, YELLOW, (int(
-                        c*SQUARESIZE+SQUARESIZE/2), height-int(r*SQUARESIZE+SQUARESIZE/2)), RADIUS)
+                        c*SQUARESIZE+SQUARESIZE/2), height-int((ROW_COUNT - r - 1)*SQUARESIZE+SQUARESIZE/2)), RADIUS)
 
         for event in self.custom_events:
             if event.type == pygame.MOUSEMOTION:
                 pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARESIZE))
                 posx = event.pos[0]
-                pygame.draw.circle(
-                    screen, RED, (posx, int(SQUARESIZE/2)), RADIUS)
+                if (comm._game_obj["PLAYERS"][0] == comm._auth["USERNAME"]):
+                    pygame.draw.circle(screen, RED, (posx, int(SQUARESIZE/2)), RADIUS)
+                else:
+                    pygame.draw.circle(screen, YELLOW, (posx, int(SQUARESIZE/2)), RADIUS)
             if event.type == pygame.MOUSEBUTTONDOWN:
                 pygame.draw.rect(screen, BLACK, (0, 0, width, SQUARESIZE))
 
         if comm._game_obj['PLAYERS'][comm._game_obj['TURN']] == comm._auth["USERNAME"]:
-            pygame.draw.circle(screen, GREEN, (0+SQUARESIZE/16, 0-SQUARESIZE/16), int(RADIUS/8))
+            pygame.draw.circle(screen, GREEN, (0+int(SQUARESIZE/16), 0+int(SQUARESIZE/16)), int(RADIUS/8))
         else:
-            pygame.draw.circle(screen, RED, (0+SQUARESIZE/16, 0-SQUARESIZE/16), int(RADIUS/8))
+            pygame.draw.circle(screen, RED, (0+int(SQUARESIZE/16), 0+int(SQUARESIZE/16)), int(RADIUS/8))
 
         # purge custom events
         self.custom_events = []
 
-    def create_board(self):
-        board = np.zeros((ROW_COUNT, COLUMN_COUNT))
-        return board
-
-    def drop_piece(self, row, col, piece):
-        self.board[row][col] = piece
-
-    def is_valid_location(self, col):
-        return self.board[ROW_COUNT-1][col] == 0
-
-    def get_next_open_row(self, col):
-        for r in range(ROW_COUNT):
-            if self.board[r][col] == 0:
-                return r
-
-    def print_board(self):
-        print(np.flip(self.board, 0))
-
-    def ping_server(self):
-        time_limit = 600 #10 min ping limit
-        check_interval = 1 #check every second
-        now = time.time()
-        last_time = now + time_limit
-        while (time.time() <= last_time):
-            if (self.check_for_turn()):
-                break
-            else:
-                time.sleep(check_interval)
-
     def check_for_turn(self):
         response = comm.getgame()
         if (response.status_code == 200):
+            self.board = np.transpose(comm._game_obj["BOARD"])
             if comm._game_obj['PLAYERS'][comm._game_obj['TURN']] == comm._auth["USERNAME"]:
                 return True
             else:
@@ -299,6 +277,7 @@ class GameScene(SceneBase):
     def make_move(self, move):
         response = comm.movegame(move)
         if (response.status_code == 200):
+            self.board = np.transpose(comm._game_obj["BOARD"])
             return True
         else:
             return False
