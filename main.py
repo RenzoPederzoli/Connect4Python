@@ -49,6 +49,7 @@ class SceneBase:
 
 # This is to use pygame-menu library correctly
 menus = {}
+
 def run_game(width, height, fps, starting_scene):
     pygame.init()
     screen = pygame.display.set_mode((width, height))
@@ -93,14 +94,19 @@ def run_game(width, height, fps, starting_scene):
 
 
 class LoginScene(SceneBase):
+    #This is so menus don't break, they overlaod
+    initialized = False
+
     def __init__(self):
         SceneBase.__init__(self)
         self.uname = ""
         self.upass = ""
-        menus["Login"].add.text_input('UserName : ', default='jon', onchange=self.uname_control)
-        menus["Login"].add.text_input('Password : ', default='123', onchange=self.upass_control)
-        menus["Login"].add.button('Submit', self.start_the_game)
-        menus["Login"].add.button('Quit', pygame_menu.events.EXIT)
+        if not LoginScene.initialized:
+            menus["Login"].add.text_input('UserName : ', default='jon', onchange=self.uname_control)
+            menus["Login"].add.text_input('Password : ', default='123', onchange=self.upass_control)
+            menus["Login"].add.button('Submit', self.start_the_game)
+            menus["Login"].add.button('Quit', pygame_menu.events.EXIT)
+        LoginScene.initialized = True
 
     def ProcessInput(self, events, pressed_keys):
         menus["Login"].update(events)
@@ -129,17 +135,25 @@ class LoginScene(SceneBase):
         self.upass = text
 
 class MainScene(SceneBase):
+    initialized = False
+
     def __init__(self):
         SceneBase.__init__(self)
-        menus["Main"].add.label('Welcome '+comm._auth['USERNAME'], font_size=48)
-        menus["Main"].add.button('Play', self.start_the_game)
-        menus["Main"].add.button('Quit', pygame_menu.events.EXIT)
-
+        if not MainScene.initialized:
+            menus["Main"].add.label('Welcome '+comm._auth['USERNAME'], font_size=48)
+            menus["Main"].add.button('Play', self.start_the_game)
+            menus["Main"].add.button('Quit', pygame_menu.events.EXIT)
+        MainScene.initialized = True
+        
     def ProcessInput(self, events, pressed_keys):
         menus["Main"].update(events)
 
     def Update(self):
-        pass
+        if comm._game_obj:
+            if comm._game_obj['STATUS'] == "STARTED":
+                self.SwitchToScene(GameScene())
+            elif comm._game_obj['STATUS'] == "QUEUEING":
+                self.SwitchToScene(WaitingScene())
 
     def Render(self, screen):
         menus["Main"].draw(screen)
@@ -147,6 +161,7 @@ class MainScene(SceneBase):
     def start_the_game(self):
         response = comm.startgame()
         if (response.status_code == 200):
+            print(comm._game_obj)
             if comm._game_obj['STATUS'] == "STARTED":
                 self.SwitchToScene(GameScene())
             else:
@@ -155,32 +170,28 @@ class MainScene(SceneBase):
             print(response.json())
 
 class WaitingScene(SceneBase):
+    initialized = False
+
     def __init__(self):
         SceneBase.__init__(self)
-        menus["Wait"].add.label('Finding Match ... ', font_size=48)
-        t1 = threading.Thread(target=self.ping_server)
-        t1.start()
+        if not WaitingScene.initialized:
+            menus["Wait"].add.label('Finding Match ... ', font_size=48)
+        self.count = 0
+        WaitingScene.initialized = True
 
     def ProcessInput(self, events, pressed_keys):
         menus["Wait"].update(events)
 
     def Update(self):
-        pass
+        #Quick way to check every sec based on game clock
+        if (self.count == 60):
+            if (comm._game_obj['STATUS'] == 'QUEUEING'):
+                self.check_for_game()
+            self.count = 0
+        self.count += 1
 
     def Render(self, screen):
         menus["Wait"].draw(screen)
-
-    #Threaded function to check for game
-    def ping_server(self):
-        time_limit = 600 #10 min ping limit
-        check_interval = 1 #check every second
-        now = time.time()
-        last_time = now + time_limit
-        while (time.time() <= last_time):
-            if (self.check_for_game()):
-                break
-            else:
-                time.sleep(check_interval)
 
     def check_for_game(self):
         response = comm.getgame()
@@ -219,7 +230,10 @@ class GameScene(SceneBase):
                     self.make_move(col)
 
     def Update(self):
-        #Quick way to check every 60 seconds
+        if (comm._game_obj["STATUS"] == "OVER"):
+            self.SwitchToScene(MainScene())
+            return
+        #Quick way to check every sec based on game clock
         if (self.count == 60):
             if (comm._game_obj['PLAYERS'][comm._game_obj['TURN']] != comm._auth["USERNAME"]):
                 self.check_for_turn()
@@ -260,12 +274,13 @@ class GameScene(SceneBase):
             pygame.draw.circle(screen, RED, (0+int(SQUARESIZE/16), 0+int(SQUARESIZE/16)), int(RADIUS/8))
 
         # purge custom events
-        self.custom_events = []
+        self.custom_events.clear()
 
     def check_for_turn(self):
         response = comm.getgame()
         if (response.status_code == 200):
             self.board = np.transpose(comm._game_obj["BOARD"])
+            
             if comm._game_obj['PLAYERS'][comm._game_obj['TURN']] == comm._auth["USERNAME"]:
                 return True
             else:

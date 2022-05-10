@@ -11,9 +11,6 @@ class Comms(object):
         self._gameid = ''
         self._game_obj = ''
 
-    def __str__(self):
-        return 
-
     def signup(self, uname, upass):
         payload = {'USERNAME':uname, 'PASSWORD':upass}
         r = requests.post(self._url+"signup", json=payload)
